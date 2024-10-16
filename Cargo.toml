@@ -3,8 +3,14 @@ name = "voice-immersion"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+
 [dependencies]
 fundsp = "0.20"
 crossbeam-channel = "0.5.13"
 cpal = "0.15.3"
 macroquad = "0.4.13"
+tokio = { version = "1.40.0", features = ["sync", "rt", "rt-multi-thread"] }
+nalgebra = "0.33.0"
+assert_no_alloc = "1.1.2"
+anyhow = "1.0.89"

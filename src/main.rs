@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
     let source_info_audio = source_info.clone();
     std::thread::spawn(move || {
         // Sender / receiver for left and right channels (stereo mic).
-        let (sender, receiver) = bounded(4096 * 4);
+        let (sender, receiver) = bounded(4096);
 
         let host = cpal::default_host();
         // Start input.
@@ -77,16 +77,18 @@ async fn main() -> anyhow::Result<()> {
             player_pos.x -= 0.01;
         }
 
-        let a = source_info.try_write();
-
-        if let Ok(mut source_info) = a {
-            source_info.relative_position.x = player_pos.x;
-            source_info.relative_position.y = player_pos.y;
-            source_info.relative_position.z = player_pos.z;
+        let direction = vec3(1., 0., 0.);
+        if let Ok(mut source_info) = source_info.try_write() {
+            source_info.relative_position.x = -player_pos.x;
+            source_info.relative_position.y = -player_pos.y;
+            source_info.relative_position.z = -player_pos.z;
+            source_info.direction.x = direction.x;
+            source_info.direction.y = direction.y;
+            source_info.direction.z = direction.z;
         }
 
         draw_sphere(player_pos, HEAD_RADIUS, None, BLUE);
-
+        draw_line_3d(player_pos, player_pos + direction, RED);
         set_default_camera();
         draw_text(
             &format!("{:?}", source_info.read().unwrap().relative_position),

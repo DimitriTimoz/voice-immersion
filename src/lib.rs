@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use crossbeam_channel::{Receiver, Sender};
 use fundsp::hacker::*;
-use nalgebra::Vector3;
+use nalgebra::{ComplexField, Vector3};
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
 #[global_allocator]
@@ -15,6 +15,7 @@ static A: AllocDisabler = AllocDisabler;
 
 const SOUND_SPEED: f32 = 343.0;
 pub const HEAD_RADIUS: f32 = 0.10;
+const UP_VECTOR: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
 #[derive(Clone)]
 pub struct SourceInfo {
     pub relative_position: Vector3<f32>,
@@ -108,13 +109,16 @@ where
     let sample_rate = config.sample_rate.0 as f64;
     let channels = config.channels as usize;
     let amplitude: Shared = shared(1.0);
-    let distance_delay = shared(0.0);
+    let (left_amp, right_amp) = (shared(0.0), shared(0.0));
 
     let mut net = Net::wrap(Box::new(input));
     net.set_sample_rate(sample_rate);
     net.chain(Box::new(tick() * var(&amplitude)));
-    net.chain(Box::new(lowpass_hz(18000.0, 0.1)));
-    net.chain(Box::new(highpass_hz(30.0, 0.1)));
+
+    // Stereo effects
+    net.chain(Box::new(
+        (pass() * var(&left_amp)) | (pass() * var(&right_amp)),
+    ));
 
     net.check();
     println!("Net checked.");
@@ -142,8 +146,15 @@ where
             updated_source_info = info.clone();
             let distance = updated_source_info.relative_position.norm();
             let amp = 1.0 / (1.0 + (distance).powi(2));
-            println!("Distance: {}, Amplitude: {}", distance, amp);
             amplitude.set_value(amp);
+
+            let uv = updated_source_info
+                .relative_position
+                .cross(&updated_source_info.direction);
+            let coeff = (uv.norm() / distance) * uv.dot(&-UP_VECTOR).signum();
+
+            left_amp.set_value((1.0 - coeff) / 2.0);
+            right_amp.set_value((1.0 + coeff) / 2.0);
         }
 
         std::thread::sleep(std::time::Duration::from_millis(5));

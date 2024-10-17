@@ -7,7 +7,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use crossbeam_channel::{Receiver, Sender};
 use fundsp::hacker::*;
-use nalgebra::{ComplexField, Vector3};
+use nalgebra::Vector3;
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
 #[global_allocator]
@@ -16,10 +16,19 @@ static A: AllocDisabler = AllocDisabler;
 const SOUND_SPEED: f32 = 343.0;
 pub const HEAD_RADIUS: f32 = 0.10;
 const UP_VECTOR: Vector3<f32> = Vector3::new(0.0, 1.0, 0.0);
-#[derive(Clone)]
+
+#[derive(Debug, Clone)]
+pub struct InAnotherRoom {
+    pub wall_width: f32,
+    pub wall_attenuation_factor: f32,
+    pub cutoff_frequency: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct SourceInfo {
     pub relative_position: Vector3<f32>,
     pub direction: Vector3<f32>,
+    pub room: Option<InAnotherRoom>,
 }
 
 impl Default for SourceInfo {
@@ -27,6 +36,7 @@ impl Default for SourceInfo {
         SourceInfo {
             relative_position: Vector3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            room: None,
         }
     }
 }
@@ -95,26 +105,44 @@ where
     }
 }
 
+pub fn room_amplitude_factor(room: Option<InAnotherRoom>) -> f32 {
+    if let Some(room) = room {
+        let wall_attenuation = room.wall_attenuation_factor;
+        let wall_width = room.wall_width;
+
+        (-(wall_width) * wall_attenuation).exp()
+    } else {
+        1.0
+    }
+}
+
 pub fn run_out<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     receiver: Receiver<(f32, f32)>,
+    wave: fundsp::wave::Wave,
     source_info: Arc<RwLock<SourceInfo>>,
 ) -> Result<(), anyhow::Error>
 where
     T: SizedSample + FromSample<f32> + Send,
 {
-    let input = An(InputNode::new(receiver));
-
+    //let input = An(InputNode::new(receiver));
+    #[cfg(not(feature = "mic"))]
+    let input = WavePlayer::new(&Arc::new(wave.clone()), 0, 0, wave.length(), Some(0));
+    #[cfg(feature = "mic")]
+    let input = InputNode::new(receiver);
     let sample_rate = config.sample_rate.0 as f64;
     let channels = config.channels as usize;
     let amplitude: Shared = shared(1.0);
     let (left_amp, right_amp) = (shared(0.0), shared(0.0));
 
-    let mut net = Net::wrap(Box::new(input));
+    let mut net = Net::wrap(Box::new(An(input)));
     net.set_sample_rate(sample_rate);
     net.chain(Box::new(tick() * var(&amplitude)));
+    net.chain(Box::new(tick() * var(&amplitude)));
 
+    let (material_filter_sender, material_filter) = listen(lowpass_hz(5000.0, 0.1));
+    net.chain(Box::new(material_filter));
     // Stereo effects
     net.chain(Box::new(
         (pass() * var(&left_amp)) | (pass() * var(&right_amp)),
@@ -140,26 +168,40 @@ where
         None,
     )?;
     stream.play()?;
-    let mut updated_source_info = SourceInfo::default();
+
+    let mut in_room = false;
+    let mut room_amplitude = 1.0;
+    //let mut updated_source_info = SourceInfo::default();
     loop {
         if let Ok(info) = source_info.try_read() {
-            updated_source_info = info.clone();
-            let distance = updated_source_info.relative_position.norm();
-            let amp = 1.0 / (1.0 + (distance).powi(2));
-            amplitude.set_value(amp);
+            // Distance attenuation.
+            let distance = info.relative_position.norm();
+            let amp = 1.0 / (1.0 + (distance / 10.0).powi(2));
 
-            let uv = updated_source_info
-                .relative_position
-                .cross(&updated_source_info.direction);
+            // Orientation hears attenuation.
+            let uv = info.relative_position.cross(&info.direction);
             let coeff = (uv.norm() / distance) * uv.dot(&-UP_VECTOR).signum();
 
-            left_amp.set_value((1.0 - coeff) / 2.0);
-            right_amp.set_value((1.0 + coeff) / 2.0);
+            left_amp.set_value((1.0 + coeff) / 2.0);
+            right_amp.set_value((1.0 - coeff) / 2.0);
+            // Room effects.
+            if let Some(room) = &info.room {
+                if !in_room {
+                    in_room = true;
+                    room_amplitude = room_amplitude_factor(Some(room.clone()));
+                    material_filter_sender
+                        .try_send(Setting::center_q(room.cutoff_frequency, 5.0))
+                        .expect("Failed to send setting to material filter.");
+                }
+            } else if in_room {
+                in_room = false;
+                room_amplitude = room_amplitude_factor(None);
+            }
+            amplitude.set_value(amp * room_amplitude);
         }
 
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    Ok(())
 }
 
 fn write_data<T>(output: &mut [T], channels: usize, next_sample: &mut dyn FnMut() -> (f32, f32))

@@ -11,6 +11,9 @@ crossbeam-channel = "0.5.13"
 cpal = "0.15.3"
 macroquad = "0.4.13"
 tokio = { version = "1.40.0", features = ["sync", "rt", "rt-multi-thread"] }
-nalgebra = "0.33.0"
+nalgebra = "0.33"
 assert_no_alloc = "1.1.2"
 anyhow = "1.0.89"
+
+[features]
+mic = []

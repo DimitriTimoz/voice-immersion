@@ -108,11 +108,14 @@ where
     let sample_rate = config.sample_rate.0 as f64;
     let channels = config.channels as usize;
     let amplitude: Shared = shared(1.0);
+    let distance_delay = shared(0.0);
 
     let mut net = Net::wrap(Box::new(input));
     net.set_sample_rate(sample_rate);
     net.chain(Box::new(tick() * var(&amplitude)));
-    
+    net.chain(Box::new(lowpass_hz(18000.0, 0.1)));
+    net.chain(Box::new(highpass_hz(30.0, 0.1)));
+
     net.check();
     println!("Net checked.");
     let backend = net.backend();

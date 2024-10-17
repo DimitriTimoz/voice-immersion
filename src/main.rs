@@ -17,8 +17,7 @@ async fn main() -> anyhow::Result<()> {
         // Start input.
         let in_device = host.default_input_device().unwrap();
         let in_config = in_device.default_input_config().unwrap();
-        let wave = Wave::load("loop.wav").unwrap();
-    
+        let wave = Wave::load("loop3.flac").unwrap();
 
         match in_config.sample_format() {
             cpal::SampleFormat::F32 => run_in::<f32>(&in_device, &in_config.into(), sender),
@@ -31,16 +30,31 @@ async fn main() -> anyhow::Result<()> {
         let out_config = out_device.default_output_config().unwrap();
         match out_config.sample_format() {
             cpal::SampleFormat::F32 => {
-                let _ =
-                    run_out::<f32>(&out_device, &out_config.into(), receiver, wave, source_info_audio);
+                let _ = run_out::<f32>(
+                    &out_device,
+                    &out_config.into(),
+                    receiver,
+                    wave,
+                    source_info_audio,
+                );
             }
             cpal::SampleFormat::I16 => {
-                let _ =
-                    run_out::<i16>(&out_device, &out_config.into(), receiver, wave, source_info_audio);
+                let _ = run_out::<i16>(
+                    &out_device,
+                    &out_config.into(),
+                    receiver,
+                    wave,
+                    source_info_audio,
+                );
             }
             cpal::SampleFormat::U16 => {
-                let _ =
-                    run_out::<u16>(&out_device, &out_config.into(), receiver, wave, source_info_audio);
+                let _ = run_out::<u16>(
+                    &out_device,
+                    &out_config.into(),
+                    receiver,
+                    wave,
+                    source_info_audio,
+                );
             }
             format => eprintln!("Unsupported sample format: {}", format),
         }
@@ -85,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
         draw_cube_wires(vec3(-1.5, 0., 0.0), vec3(1., 0., 01.), YELLOW);
 
         let in_room =
-            player_pos.x > -2.0 && player_pos.x < 1.0 && player_pos.z > -0.5 && player_pos.z < 0.5;
+            player_pos.x > -2.0 && player_pos.x < -1.0 && player_pos.z > -0.5 && player_pos.z < 0.5;
 
         draw_sphere(player_pos, HEAD_RADIUS, None, BLUE);
         draw_line_3d(player_pos, player_pos + direction, RED);
@@ -107,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
             source_info.direction.z = direction.z;
             source_info.room = if in_room {
                 Some(InAnotherRoom {
-                    wall_attenuation_factor: 1000.,
+                    wall_attenuation_factor: 500.,
                     wall_width: 0.002,
                     cutoff_frequency: 2000.,
                 })

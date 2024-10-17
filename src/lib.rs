@@ -141,7 +141,7 @@ where
     net.chain(Box::new(tick() * var(&amplitude)));
     net.chain(Box::new(tick() * var(&amplitude)));
 
-    let (material_filter_sender, material_filter) = listen(lowpass_hz(5000.0, 0.1));
+    let (material_filter_sender, material_filter) = listen(lowpole_hz(20000.0));
     net.chain(Box::new(material_filter));
     // Stereo effects
     net.chain(Box::new(
@@ -149,6 +149,7 @@ where
     ));
 
     net.check();
+
     println!("Net checked.");
     let backend = net.backend();
 
@@ -188,15 +189,16 @@ where
             if let Some(room) = &info.room {
                 if !in_room {
                     in_room = true;
-                    room_amplitude = room_amplitude_factor(Some(room.clone()));
+                    room_amplitude = room_amplitude_factor(None);
                     material_filter_sender
-                        .try_send(Setting::center_q(room.cutoff_frequency, 5.0))
+                        .try_send(Setting::center(10.0))
                         .expect("Failed to send setting to material filter.");
                 }
             } else if in_room {
                 in_room = false;
                 room_amplitude = room_amplitude_factor(None);
             }
+            println!("Room amplitude: {}", room_amplitude);
             amplitude.set_value(amp * room_amplitude);
         }
 

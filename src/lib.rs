@@ -7,6 +7,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use crossbeam_channel::{Receiver, Sender};
 use fundsp::hacker::*;
+use hacker32::sine;
 use nalgebra::Vector3;
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
@@ -134,29 +135,36 @@ where
 
     #[cfg(feature = "mic")]
     let input = InputNode::new(receiver);
+
     let sample_rate = config.sample_rate.0 as f64;
     let channels = config.channels as usize;
     let amplitude: Shared = shared(1.0);
-    let (left_amp, right_amp) = (shared(0.0), shared(0.0));
+    let (left_amp, right_amp) = (shared(1.0), shared(1.0));
 
-    let mut net = Net::wrap(Box::new(An(input)));
+    let mut net = Net::new(1, 2);
+    //let mut net = Net::wrap(Box::new(An(input)));
+    let input_node = net.push(Box::new(sine()));
     net.set_sample_rate(sample_rate);
     net.chain(Box::new(tick() * (var(&amplitude) >> follow(0.1))));
 
     let (material_filter_sender, material_filter) = listen(lowpole_hz(20000.0));
     net.chain(Box::new(material_filter));
     // Stereo effects
-    net.chain(Box::new(
-        (pass() * var(&left_amp)) | (pass() * var(&right_amp)),
+    let output_node = net.chain(Box::new(
+        (pass() * var(&left_amp)) ^ (pass() * var(&right_amp)),
     ));
-
+    println!(
+        "Output node: {:?}",
+        (sine() >> (pass() * var(&left_amp)) ^ (pass() * var(&right_amp))).outputs()
+    );
+    net.connect_input(0, input_node, 0);
+    net.connect_output(output_node, 0, 0);
+    net.connect_output(output_node, 1, 1);
     net.check();
 
     println!("Net checked.");
-    let backend = net.backend();
-
-    let mut backend = BlockRateAdapter::new(Box::new(backend));
-
+    let mut backend = net.backend();
+    println!("output backend node: {:?}", backend.outputs());
     // Use `assert_no_alloc` to make sure there are no allocations or deallocations in the audio thread.
     let mut next_value = move || assert_no_alloc(|| backend.get_stereo());
 
@@ -200,7 +208,7 @@ where
                 in_room = false;
                 room_amplitude = room_amplitude_factor(None);
             }
-            println!(" amplitude: {}", amp* room_amplitude);
+            println!(" amplitude: {}", amp * room_amplitude);
             print!("left: {}, right: {}", left_amp.value(), right_amp.value());
             amplitude.set_value(amp * room_amplitude);
         }

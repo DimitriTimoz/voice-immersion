@@ -120,7 +120,7 @@ pub fn run_out<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     receiver: Receiver<(f32, f32)>,
-    wave: fundsp::wave::Wave,
+    wave: Option<fundsp::wave::Wave>,
     source_info: Arc<RwLock<SourceInfo>>,
 ) -> Result<(), anyhow::Error>
 where
@@ -128,7 +128,10 @@ where
 {
     //let input = An(InputNode::new(receiver));
     #[cfg(not(feature = "mic"))]
+    let wave = wave.unwrap();
+    #[cfg(not(feature = "mic"))]
     let input = WavePlayer::new(&Arc::new(wave.clone()), 0, 0, wave.length(), Some(0));
+
     #[cfg(feature = "mic")]
     let input = InputNode::new(receiver);
     let sample_rate = config.sample_rate.0 as f64;
@@ -138,8 +141,7 @@ where
 
     let mut net = Net::wrap(Box::new(An(input)));
     net.set_sample_rate(sample_rate);
-    net.chain(Box::new(tick() * var(&amplitude)));
-    net.chain(Box::new(tick() * var(&amplitude)));
+    net.chain(Box::new(tick() * (var(&amplitude) >> follow(0.1))));
 
     let (material_filter_sender, material_filter) = listen(lowpole_hz(20000.0));
     net.chain(Box::new(material_filter));
@@ -189,7 +191,7 @@ where
             if let Some(room) = &info.room {
                 if !in_room {
                     in_room = true;
-                    room_amplitude = room_amplitude_factor(None);
+                    room_amplitude = room_amplitude_factor(Some(room.clone()));
                     material_filter_sender
                         .try_send(Setting::center(10.0))
                         .expect("Failed to send setting to material filter.");
@@ -198,7 +200,8 @@ where
                 in_room = false;
                 room_amplitude = room_amplitude_factor(None);
             }
-            println!("Room amplitude: {}", room_amplitude);
+            println!(" amplitude: {}", amp* room_amplitude);
+            print!("left: {}, right: {}", left_amp.value(), right_amp.value());
             amplitude.set_value(amp * room_amplitude);
         }
 

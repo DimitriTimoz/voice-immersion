@@ -16,8 +16,11 @@ async fn main() -> anyhow::Result<()> {
         let host = cpal::default_host();
         // Start input.
         let in_device = host.default_input_device().unwrap();
-        let in_config = in_device.default_input_config().unwrap();
-        let wave = Wave::load("loop3.flac").unwrap();
+        let in_config: cpal::SupportedStreamConfig = in_device.default_input_config().unwrap();
+        #[cfg(not(feature = "mic"))]
+        let wave = Some(Wave::load("loop.flac").unwrap());
+        #[cfg(feature = "mic")]
+        let wave = None;
 
         match in_config.sample_format() {
             cpal::SampleFormat::F32 => run_in::<f32>(&in_device, &in_config.into(), sender),
@@ -122,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
             source_info.room = if in_room {
                 Some(InAnotherRoom {
                     wall_attenuation_factor: 500.,
-                    wall_width: 0.002,
+                    wall_width: 0.005,
                     cutoff_frequency: 2000.,
                 })
             } else {

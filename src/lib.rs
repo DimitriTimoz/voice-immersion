@@ -9,6 +9,7 @@ use crossbeam_channel::{Receiver, Sender};
 use fundsp::hacker::*;
 use hacker32::sine;
 use nalgebra::Vector3;
+use numeric_array::generic_array::arr;
 
 #[cfg(debug_assertions)] // required when disable_release is set (default)
 #[global_allocator]
@@ -131,7 +132,7 @@ where
     #[cfg(not(feature = "mic"))]
     let wave = wave.unwrap();
     #[cfg(not(feature = "mic"))]
-    let input = WavePlayer::new(&Arc::new(wave.clone()), 0, 0, wave.length(), Some(0));
+    let mut input = WavePlayer::new(&Arc::new(wave.clone()), 0, 0, wave.length(), Some(0));
 
     #[cfg(feature = "mic")]
     let input = InputNode::new(receiver);
@@ -143,7 +144,6 @@ where
 
     let mut net = Net::new(1, 2);
     //let mut net = Net::wrap(Box::new(An(input)));
-    let input_node = net.push(Box::new(sine()));
     net.set_sample_rate(sample_rate);
     net.chain(Box::new(tick() * (var(&amplitude) >> follow(0.1))));
 
@@ -157,7 +157,6 @@ where
         "Output node: {:?}",
         (sine() >> (pass() * var(&left_amp)) ^ (pass() * var(&right_amp))).outputs()
     );
-    net.connect_input(0, input_node, 0);
     net.connect_output(output_node, 0, 0);
     net.connect_output(output_node, 1, 1);
     net.check();
@@ -166,7 +165,12 @@ where
     let mut backend = net.backend();
     println!("output backend node: {:?}", backend.outputs());
     // Use `assert_no_alloc` to make sure there are no allocations or deallocations in the audio thread.
-    let mut next_value = move || assert_no_alloc(|| backend.get_stereo());
+    let mut next_value = move || assert_no_alloc(|| {
+        let input_sample = input.tick(&Frame::new(arr![]));
+        let mut output = [0.0; 2];
+        backend.tick(&input_sample, &mut output);
+        (output[0], output[1])
+    }); 
 
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 

@@ -11,7 +11,7 @@ use hacker32::sine;
 use nalgebra::Vector3;
 use numeric_array::generic_array::arr;
 
-#[cfg(debug_assertions)] // required when disable_release is set (default)
+#[cfg(all(debug_assertions, feature = "enable_alloc_disabler"))]
 #[global_allocator]
 static A: AllocDisabler = AllocDisabler;
 
